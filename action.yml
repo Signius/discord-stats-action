@@ -1,5 +1,6 @@
 name: 'Discord Stats'
-description: 'Fetch monthly Discord member & message stats for a guild'
+description: 'Fetch monthly Discord member & message stats'
+
 inputs:
   discord-token:
     description: 'Bot token'
@@ -10,7 +11,7 @@ inputs:
   output-file:
     description: 'Relative or absolute path for JSON output'
     required: false
-    default: 'discord-stats.json'
+    default: 'stats.json'
   backfill:
     description: 'Whether to backfill from Jan of BACKFILL_YEAR'
     required: false
@@ -18,7 +19,28 @@ inputs:
   backfill-year:
     description: 'Year to backfill from (ignored if backfill=false)'
     required: false
-    default: '${{ github.event.inputs.backfill-year || format("%04d", github.event.repository.updated_at | time | toDate | date("YYYY")) }}'
+    default: ''
+
 runs:
-  using: 'node12'
-  main: 'getStats.js'
+  using: composite
+  steps:
+    - name: Check out action code
+      uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: npm install discord.js
+
+    - name: Run stats script
+      run: |
+        node getStats.js
+      env:
+        DISCORD_TOKEN:  ${{ inputs.discord-token }}
+        GUILD_ID:       ${{ inputs.guild-id }}
+        OUTPUT_FILE:    ${{ inputs.output-file }}
+        BACKFILL:       ${{ inputs.backfill }}
+        BACKFILL_YEAR:  ${{ inputs.backfill-year }}
