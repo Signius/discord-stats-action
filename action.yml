@@ -1,25 +1,26 @@
-name: 'Discord Stats'
-description: 'Fetch monthly Discord member & message stats'
+name: "Discord Stats"
+description: "Fetch monthly Discord member & message stats"
 
 inputs:
   discord-token:
-    description: 'Bot token'
+    description: "Bot token"
     required: true
   guild-id:
-    description: 'Server (guild) ID'
+    description: "Server (guild) ID"
     required: true
   output-file:
-    description: 'Relative or absolute path for JSON output'
+    description: "Relative or absolute path for JSON output"
     required: false
-    default: 'stats.json'
+    default: "stats.json"
   backfill:
-    description: 'Whether to backfill from Jan of BACKFILL_YEAR'
+    description: "Whether to backfill from Jan of BACKFILL_YEAR"
     required: false
-    default: 'false'
+    default: "false"
   backfill-year:
-    description: 'Year to backfill from (ignored if backfill=false)'
+    description: "Year to backfill from (ignored if backfill=false)"
     required: false
-    default: ''
+    default: ""
+
 runs:
   using: composite
   steps:
@@ -29,17 +30,19 @@ runs:
     - name: Set up Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: '18'
+        node-version: "18"
 
     - name: Install dependencies
+      shell: bash
       run: npm install discord.js
 
     - name: Run stats script
+      shell: bash
       run: |
         node getStats.js
       env:
-        DISCORD_TOKEN:  ${{ inputs.discord-token }}
-        GUILD_ID:       ${{ inputs.guild-id }}
-        OUTPUT_FILE:    ${{ inputs.output-file }}
-        BACKFILL:       ${{ inputs.backfill }}
-        BACKFILL_YEAR:  ${{ inputs.backfill-year }}
+        DISCORD_TOKEN: ${{ inputs.discord-token }}
+        GUILD_ID: ${{ inputs.guild-id }}
+        OUTPUT_FILE: ${{ inputs.output-file }}
+        BACKFILL: ${{ inputs.backfill }}
+        BACKFILL_YEAR: ${{ inputs.backfill-year }}
