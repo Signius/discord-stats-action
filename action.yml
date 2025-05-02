@@ -36,9 +36,8 @@ runs:
       run: npm install
 
     - name: Run stats script
-      working-directory: ${{ github.action_path }}
       shell: bash
-      run: node getStats.js
+      run: node ${{ github.action_path }}/getStats.js
       env:
         DISCORD_TOKEN: ${{ inputs.discord-token }}
         GUILD_ID: ${{ inputs.guild-id }}
