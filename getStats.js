@@ -10,7 +10,7 @@ const GUILD_ID      = process.env.INPUT_GUILD_ID      || process.env.GUILD_ID
 const OUTPUT_FILE =
   process.env.INPUT_OUTPUT_FILE ||
   process.env.OUTPUT_FILE ||
-  path.resolve(process.cwd(), 'data/discord-stats/discord-stats.json')
+  path.resolve(process.cwd(), 'data/discord-stats/stats.json')
 
 const BACKFILL      = (process.env.INPUT_BACKFILL      || process.env.BACKFILL      || 'false') === 'true'
 const BACKFILL_YEAR = Number(process.env.INPUT_BACKFILL_YEAR || process.env.BACKFILL_YEAR) || new Date().getFullYear()
