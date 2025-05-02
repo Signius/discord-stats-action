@@ -18,7 +18,7 @@ inputs:
   backfill-year:
     description: 'Year to backfill from (ignored if backfill=false)'
     required: false
-    default: '${{ github.event.inputs.backfill-year || format("%04d", github.event.repository.updated_at | time | toDate | date("YYYY")) }}'
+    default: ''
 runs:
   using: 'node12'
   main: 'getStats.js'
