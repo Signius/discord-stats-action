@@ -33,7 +33,6 @@ client.once('ready', async () => {
   const guild = await client.guilds.fetch(GUILD_ID)
   const memberCount = guild.memberCount
 
-  // Load existing data
   let data = {}
   if (fs.existsSync(OUTPUT_FILE)) {
     data = JSON.parse(fs.readFileSync(OUTPUT_FILE, 'utf8'))
@@ -53,27 +52,30 @@ client.once('ready', async () => {
     const endDate   = new Date(now.getFullYear(), now.getMonth(), 1)
 
     for (const channel of channels) {
-      // Main channel messages
       let lastId = null
       outer: while (true) {
-        const msgs = await channel.messages.fetch({ limit: 100, before: lastId })
-        if (!msgs.size) break
-        for (const msg of msgs.values()) {
-          const ts = msg.createdAt
-          if (ts < startDate) break outer
-          if (ts < endDate) {
-            const key = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}`
-            if (!buckets[key]) buckets[key] = { totalMessages: 0, uniquePosters: new Set() }
-            buckets[key].totalMessages++
-            if (!msg.author.bot) buckets[key].uniquePosters.add(msg.author.id)
+        try {
+          const msgs = await channel.messages.fetch({ limit: 100, before: lastId })
+          if (!msgs.size) break
+          for (const msg of msgs.values()) {
+            const ts = msg.createdAt
+            if (ts < startDate) break outer
+            if (ts < endDate) {
+              const key = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}`
+              if (!buckets[key]) buckets[key] = { totalMessages: 0, uniquePosters: new Set() }
+              buckets[key].totalMessages++
+              if (!msg.author.bot) buckets[key].uniquePosters.add(msg.author.id)
+            }
           }
+          lastId = msgs.last()?.id
+          if (!lastId) break
+          await new Promise(r => setTimeout(r, 500))
+        } catch (e) {
+          console.warn(`⚠️ Skipping channel ${channel.id} (${channel.name}) due to access error: ${e.message}`)
+          break
         }
-        lastId = msgs.last()?.id
-        if (!lastId) break
-        await new Promise(r => setTimeout(r, 500))
       }
 
-      // Threads (active + archived)
       if (channel.threads) {
         const pools = [
           await channel.threads.fetchActive(),
@@ -83,28 +85,32 @@ client.once('ready', async () => {
           for (const thread of pool.threads.values()) {
             let threadLastId = null
             while (true) {
-              const msgs = await thread.messages.fetch({ limit: 100, before: threadLastId })
-              if (!msgs.size) break
-              for (const msg of msgs.values()) {
-                const ts = msg.createdAt
-                if (ts < startDate) break
-                if (ts < endDate) {
-                  const key = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}`
-                  if (!buckets[key]) buckets[key] = { totalMessages: 0, uniquePosters: new Set() }
-                  buckets[key].totalMessages++
-                  if (!msg.author.bot) buckets[key].uniquePosters.add(msg.author.id)
+              try {
+                const msgs = await thread.messages.fetch({ limit: 100, before: threadLastId })
+                if (!msgs.size) break
+                for (const msg of msgs.values()) {
+                  const ts = msg.createdAt
+                  if (ts < startDate) break
+                  if (ts < endDate) {
+                    const key = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}`
+                    if (!buckets[key]) buckets[key] = { totalMessages: 0, uniquePosters: new Set() }
+                    buckets[key].totalMessages++
+                    if (!msg.author.bot) buckets[key].uniquePosters.add(msg.author.id)
+                  }
                 }
+                threadLastId = msgs.last()?.id
+                if (!threadLastId) break
+                await new Promise(r => setTimeout(r, 500))
+              } catch (e) {
+                console.warn(`⚠️ Skipping thread ${thread.id} (${thread.name}) due to access error: ${e.message}`)
+                break
               }
-              threadLastId = msgs.last()?.id
-              if (!threadLastId) break
-              await new Promise(r => setTimeout(r, 500))
             }
           }
         }
       }
     }
 
-    // Populate data
     for (let m = 0; m < now.getMonth(); m++) {
       const dt  = new Date(BACKFILL_YEAR, m, 1)
       const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}`
@@ -118,7 +124,6 @@ client.once('ready', async () => {
     }
 
   } else {
-    // Last-month only
     const monthStart = new Date(now.getFullYear(), now.getMonth()-1, 1)
     const monthEnd   = new Date(now.getFullYear(), now.getMonth(), 1)
     const key        = `${monthStart.getFullYear()}-${String(monthStart.getMonth()+1).padStart(2,'0')}`
@@ -129,60 +134,74 @@ client.once('ready', async () => {
     for (const channel of channels) {
       let lastId = null
       while (true) {
-        const msgs = await channel.messages.fetch({ limit: 100, before: lastId })
-        if (!msgs.size) break
-        for (const msg of msgs.values()) {
-          const ts = msg.createdAt
-          if (ts >= monthStart && ts < monthEnd) {
-            totalMessages++
-            if (!msg.author.bot) uniquePostersSet.add(msg.author.id)
+        try {
+          const msgs = await channel.messages.fetch({ limit: 100, before: lastId })
+          if (!msgs.size) break
+          for (const msg of msgs.values()) {
+            const ts = msg.createdAt
+            if (ts >= monthStart && ts < monthEnd) {
+              totalMessages++
+              if (!msg.author.bot) uniquePostersSet.add(msg.author.id)
+            }
+            if (ts < monthStart) { msgs.clear(); break }
           }
-          if (ts < monthStart) { msgs.clear(); break }
+          lastId = msgs.last()?.id
+          if (!lastId) break
+          await new Promise(r => setTimeout(r, 500))
+        } catch (e) {
+          console.warn(`⚠️ Skipping channel ${channel.id} (${channel.name}) due to access error: ${e.message}`)
+          break
         }
-        lastId = msgs.last()?.id
-        if (!lastId) break
-        await new Promise(r => setTimeout(r, 500))
       }
 
       if (channel.threads) {
-        // Active threads
         const active = await channel.threads.fetchActive()
         for (const thread of active.threads.values()) {
           let threadLastId = null
           while (true) {
-            const msgs = await thread.messages.fetch({ limit: 100, before: threadLastId })
-            if (!msgs.size) break
-            for (const msg of msgs.values()) {
-              const ts = msg.createdAt
-              if (ts >= monthStart && ts < monthEnd) {
-                totalMessages++
-                if (!msg.author.bot) uniquePostersSet.add(msg.author.id)
+            try {
+              const msgs = await thread.messages.fetch({ limit: 100, before: threadLastId })
+              if (!msgs.size) break
+              for (const msg of msgs.values()) {
+                const ts = msg.createdAt
+                if (ts >= monthStart && ts < monthEnd) {
+                  totalMessages++
+                  if (!msg.author.bot) uniquePostersSet.add(msg.author.id)
+                }
+                if (ts < monthStart) { msgs.clear(); break }
               }
-              if (ts < monthStart) { msgs.clear(); break }
+              threadLastId = msgs.last()?.id
+              if (!threadLastId) break
+              await new Promise(r => setTimeout(r, 500))
+            } catch (e) {
+              console.warn(`⚠️ Skipping thread ${thread.id} (${thread.name}) due to access error: ${e.message}`)
+              break
             }
-            threadLastId = msgs.last()?.id
-            if (!threadLastId) break
-            await new Promise(r => setTimeout(r, 500))
           }
         }
-        // Archived threads
+
         const archived = await channel.threads.fetchArchived({ limit: 100 })
         for (const thread of archived.threads.values()) {
           let threadLastId = null
           while (true) {
-            const msgs = await thread.messages.fetch({ limit: 100, before: threadLastId })
-            if (!msgs.size) break
-            for (const msg of msgs.values()) {
-              const ts = msg.createdAt
-              if (ts >= monthStart && ts < monthEnd) {
-                totalMessages++
-                if (!msg.author.bot) uniquePostersSet.add(msg.author.id)
+            try {
+              const msgs = await thread.messages.fetch({ limit: 100, before: threadLastId })
+              if (!msgs.size) break
+              for (const msg of msgs.values()) {
+                const ts = msg.createdAt
+                if (ts >= monthStart && ts < monthEnd) {
+                  totalMessages++
+                  if (!msg.author.bot) uniquePostersSet.add(msg.author.id)
+                }
+                if (ts < monthStart) { msgs.clear(); break }
               }
-              if (ts < monthStart) { msgs.clear(); break }
+              threadLastId = msgs.last()?.id
+              if (!threadLastId) break
+              await new Promise(r => setTimeout(r, 500))
+            } catch (e) {
+              console.warn(`⚠️ Skipping thread ${thread.id} (${thread.name}) due to access error: ${e.message}`)
+              break
             }
-            threadLastId = msgs.last()?.id
-            if (!threadLastId) break
-            await new Promise(r => setTimeout(r, 500))
           }
         }
       }
@@ -196,7 +215,6 @@ client.once('ready', async () => {
     console.log(`📊 Wrote stats for ${key}: ${totalMessages} msgs, ${uniquePostersSet.size} uniquePosters, ${memberCount} members`)
   }
 
-  // Sort and write out
   const ordered = {}
   Object.keys(data).sort().forEach(k => { ordered[k] = data[k] })
   const outDir = path.dirname(OUTPUT_FILE)
