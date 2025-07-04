@@ -101,6 +101,7 @@ client.once('ready', async () => {
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true })
   fs.writeFileSync(OUTPUT_FILE, JSON.stringify(ordered, null, 2))
   console.log(`✅ Stats written to ${OUTPUT_FILE}`)
+  console.table(Object.entries(ordered))
   process.exit(0)
 })
 
