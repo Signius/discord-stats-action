@@ -1,7 +1,24 @@
 #!/usr/bin/env node
-import { Client, GatewayIntentBits } from 'discord.js'
+// getStats.js
+import { Client, GatewayIntentBits, ChannelType, PermissionsBitField } from 'discord.js'
 import fs from 'fs'
 import path from 'path'
+import { getConfig, getRepoRoot } from '../org-stats/config-loader.js'
+
+// Helper function to get readable channel type names
+function getChannelTypeName(type) {
+    switch (type) {
+        case ChannelType.GuildText: return 'Text Channel'
+        case ChannelType.GuildAnnouncement: return 'Announcement Channel'
+        case ChannelType.GuildForum: return 'Forum Channel'
+        case ChannelType.GuildMedia: return 'Media Channel'
+        case ChannelType.GuildStageVoice: return 'Stage Channel'
+        case ChannelType.GuildVoice: return 'Voice Channel'
+        case ChannelType.GuildDirectory: return 'Directory Channel'
+        case ChannelType.GuildCategory: return 'Category'
+        default: return `Unknown Type (${type})`
+    }
+}
 
 // —— Config from env / GitHub Action inputs ——
 const DISCORD_TOKEN = process.env.INPUT_DISCORD_TOKEN || process.env.DISCORD_TOKEN
