@@ -31,7 +31,7 @@ console.log(`  BACKFILL_YEAR: ${BACKFILL_YEAR}`)
 
 // Netlify function configuration - hardcoded URLs
 const NETLIFY_FUNCTION_URL = 'https://glittering-chebakia-09bd42.netlify.app/.netlify/functions/discord-stats-background'
-const API_ROUTE_URL = 'https://glittering-chebakia-09bd42.netlify.app/api/discord-stats'
+const API_ROUTE_URL = 'https://glittering-chebakia-09bd42.netlify.app/api/discord/status'
 
 // Validate required inputs 
 if (!GUILD_ID) {
