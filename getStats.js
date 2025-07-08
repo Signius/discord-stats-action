@@ -112,6 +112,9 @@ async function main() {
 
   const maxAttempts = 60 // 5 minutes with 5-second intervals
   const pollInterval = 5000 // 5 seconds
+  let staleData = null
+  let staleAttempt = 0
+  const maxStaleAttempts = 36 // 3 minutes with 5-second intervals
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(`🔄 Polling attempt ${attempt}/${maxAttempts}...`)
@@ -145,21 +148,34 @@ async function main() {
 
         process.exit(0)
       } else if (statusResponse.status === 'stale') {
-        console.log('⚠️  Stats are stale, but available. Using current data...')
-
-        const stats = statusResponse.stats
-        const outDir = path.dirname(OUTPUT_FILE)
-
-        if (!fs.existsSync(outDir)) {
-          fs.mkdirSync(outDir, { recursive: true })
+        if (!staleData) {
+          staleData = statusResponse
+          staleAttempt = 0
+          console.log('⚠️  Stats are stale, but available. Will continue polling for fresh data...')
         }
 
-        fs.writeFileSync(OUTPUT_FILE, JSON.stringify(stats, null, 2))
-        console.log(`✅ Stats written to ${OUTPUT_FILE}`)
-        console.log(`📊 Last updated: ${statusResponse.lastUpdated}`)
-        console.log(`⏱️  Time since update: ${statusResponse.timeSinceUpdate} seconds`)
+        staleAttempt++
+        console.log(`⏳ Stale data found, continuing to poll for fresh data... (${staleAttempt}/${maxStaleAttempts})`)
 
-        process.exit(0)
+        if (staleAttempt >= maxStaleAttempts) {
+          console.log('⏰ 3 minutes elapsed with stale data, using current stale data...')
+
+          const stats = staleData.stats
+          const outDir = path.dirname(OUTPUT_FILE)
+
+          if (!fs.existsSync(outDir)) {
+            fs.mkdirSync(outDir, { recursive: true })
+          }
+
+          fs.writeFileSync(OUTPUT_FILE, JSON.stringify(stats, null, 2))
+          console.log(`✅ Stats written to ${OUTPUT_FILE}`)
+          console.log(`📊 Last updated: ${staleData.lastUpdated}`)
+          console.log(`⏱️  Time since update: ${staleData.timeSinceUpdate} seconds`)
+
+          process.exit(0)
+        }
+
+        await sleep(pollInterval)
       } else if (statusResponse.status === 'pending') {
         console.log('⏳ Stats are still being processed...')
 
