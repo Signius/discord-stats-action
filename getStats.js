@@ -13,6 +13,22 @@ const OUTPUT_FILE =
 const BACKFILL = (process.env.INPUT_BACKFILL || process.env.BACKFILL || 'false') === 'true'
 const BACKFILL_YEAR = Number(process.env.INPUT_BACKFILL_YEAR || process.env.BACKFILL_YEAR) || new Date().getFullYear()
 
+// Debug logging
+console.log('🔍 Environment variables:')
+console.log(`  INPUT_GUILD_ID: ${process.env.INPUT_GUILD_ID}`)
+console.log(`  GUILD_ID: ${process.env.GUILD_ID}`)
+console.log(`  INPUT_OUTPUT_FILE: ${process.env.INPUT_OUTPUT_FILE}`)
+console.log(`  OUTPUT_FILE: ${process.env.OUTPUT_FILE}`)
+console.log(`  INPUT_BACKFILL: ${process.env.INPUT_BACKFILL}`)
+console.log(`  BACKFILL: ${process.env.BACKFILL}`)
+console.log(`  INPUT_BACKFILL_YEAR: ${process.env.INPUT_BACKFILL_YEAR}`)
+console.log(`  BACKFILL_YEAR: ${process.env.BACKFILL_YEAR}`)
+console.log('📊 Resolved values:')
+console.log(`  GUILD_ID: ${GUILD_ID}`)
+console.log(`  OUTPUT_FILE: ${OUTPUT_FILE}`)
+console.log(`  BACKFILL: ${BACKFILL}`)
+console.log(`  BACKFILL_YEAR: ${BACKFILL_YEAR}`)
+
 // Netlify function configuration - hardcoded URLs
 const NETLIFY_FUNCTION_URL = 'https://glittering-chebakia-09bd42.netlify.app/.netlify/functions/discord-stats-background'
 const API_ROUTE_URL = 'https://glittering-chebakia-09bd42.netlify.app/api/discord-stats'
@@ -38,7 +54,22 @@ async function makeRequest(url, options = {}) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     }
 
-    return await response.json()
+    // Check if response has content
+    const contentType = response.headers.get('content-type')
+    const text = await response.text()
+
+    if (!text || text.trim() === '') {
+      console.log('⚠️  Empty response received')
+      return { success: true, message: 'Empty response' }
+    }
+
+    // Try to parse as JSON, but handle non-JSON responses gracefully
+    try {
+      return JSON.parse(text)
+    } catch (parseError) {
+      console.log(`⚠️  Non-JSON response received: ${text.substring(0, 200)}...`)
+      return { success: true, message: 'Non-JSON response', raw: text }
+    }
   } catch (error) {
     console.error(`❌ Request failed: ${error.message}`)
     throw error
@@ -62,6 +93,8 @@ async function main() {
   functionUrl.searchParams.set('backfill', BACKFILL.toString())
   functionUrl.searchParams.set('year', BACKFILL_YEAR.toString())
 
+  console.log(`🌐 Calling URL: ${functionUrl.toString()}`)
+
   try {
     const functionResponse = await makeRequest(functionUrl.toString(), {
       method: 'GET'
@@ -69,6 +102,11 @@ async function main() {
 
     console.log('✅ Background function triggered successfully')
     console.log(`📊 Response: ${JSON.stringify(functionResponse, null, 2)}`)
+
+    // If the response indicates success (even if it's not JSON), continue with polling
+    if (functionResponse.success !== false) {
+      console.log('✅ Background function appears to have been triggered successfully')
+    }
   } catch (error) {
     console.error('❌ Failed to trigger background function:', error.message)
     process.exit(1)
