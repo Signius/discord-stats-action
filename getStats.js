@@ -1,209 +1,157 @@
 #!/usr/bin/env node
-import { Client, GatewayIntentBits } from 'discord.js'
 import fs from 'fs'
 import path from 'path'
 
 // —— Config from env / GitHub Action inputs ——
-const DISCORD_TOKEN = process.env.INPUT_DISCORD_TOKEN || process.env.DISCORD_TOKEN
-const GUILD_ID      = process.env.INPUT_GUILD_ID      || process.env.GUILD_ID
+const GUILD_ID = process.env.INPUT_GUILD_ID || process.env.GUILD_ID
 
 const OUTPUT_FILE =
   process.env.INPUT_OUTPUT_FILE ||
   process.env.OUTPUT_FILE ||
   path.resolve(process.cwd(), 'data/discord-stats/stats.json')
 
-const BACKFILL      = (process.env.INPUT_BACKFILL      || process.env.BACKFILL      || 'false') === 'true'
+const BACKFILL = (process.env.INPUT_BACKFILL || process.env.BACKFILL || 'false') === 'true'
 const BACKFILL_YEAR = Number(process.env.INPUT_BACKFILL_YEAR || process.env.BACKFILL_YEAR) || new Date().getFullYear()
 
+// Hardcoded URLs - update these to match your deployment
+const NETLIFY_FUNCTION_URL = 'https://glittering-chebakia-09bd42.netlify.app/.netlify/functions/discord-stats-background'
+const API_ROUTE_URL = 'https://glittering-chebakia-09bd42.netlify.app/api/discord/status'
+
 // Validate required inputs 
-if (!DISCORD_TOKEN || !GUILD_ID) {
-  console.error('❌ DISCORD_TOKEN (or INPUT_DISCORD_TOKEN) and GUILD_ID (or INPUT_GUILD_ID) must be set')
+if (!GUILD_ID) {
+  console.error('❌ GUILD_ID (or INPUT_GUILD_ID) must be set')
   process.exit(1)
 }
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages
-  ]
-})
+// Helper function to make HTTP requests
+async function makeRequest(url, options = {}) {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+      },
+      ...options
+    })
 
-client.once('ready', async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`)
-  const guild = await client.guilds.fetch(GUILD_ID)
-  const memberCount = guild.memberCount
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
 
-  // Load existing data
-  let data = {}
-  if (fs.existsSync(OUTPUT_FILE)) {
-    data = JSON.parse(fs.readFileSync(OUTPUT_FILE, 'utf8'))
+    return await response.json()
+  } catch (error) {
+    console.error(`❌ Request failed: ${error.message}`)
+    throw error
+  }
+}
+
+// Helper function to wait
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+// Main function
+async function main() {
+  console.log(`🚀 Starting Discord stats collection for guild: ${GUILD_ID}`)
+
+  // Step 1: Trigger the Netlify background function
+  console.log('📡 Triggering Netlify background function...')
+
+  const functionUrl = new URL(NETLIFY_FUNCTION_URL)
+  functionUrl.searchParams.set('guildId', GUILD_ID)
+  functionUrl.searchParams.set('backfill', BACKFILL.toString())
+  functionUrl.searchParams.set('year', BACKFILL_YEAR.toString())
+
+  try {
+    const functionResponse = await makeRequest(functionUrl.toString(), {
+      method: 'GET'
+    })
+
+    console.log('✅ Background function triggered successfully')
+    console.log(`📊 Response: ${JSON.stringify(functionResponse, null, 2)}`)
+  } catch (error) {
+    console.error('❌ Failed to trigger background function:', error.message)
+    process.exit(1)
   }
 
-  const channels = guild.channels.cache
-    .filter(c => c.isTextBased() && c.viewable)
-    .values()
+  // Step 2: Poll the API route to check for results
+  console.log('⏳ Polling for results...')
 
-  const now = new Date()
+  const maxAttempts = 60 // 5 minutes with 5-second intervals
+  const pollInterval = 5000 // 5 seconds
 
-  if (BACKFILL) {
-    console.log(`🔄 Backfilling Jan → last full month of ${BACKFILL_YEAR}`)
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    console.log(`🔄 Polling attempt ${attempt}/${maxAttempts}...`)
 
-    const buckets = {}
-    const startDate = new Date(BACKFILL_YEAR, 0, 1)
-    const endDate   = new Date(now.getFullYear(), now.getMonth(), 1)
+    try {
+      const apiUrl = new URL(API_ROUTE_URL)
+      apiUrl.searchParams.set('guildId', GUILD_ID)
 
-    for (const channel of channels) {
-      // Main channel messages
-      let lastId = null
-      outer: while (true) {
-        const msgs = await channel.messages.fetch({ limit: 100, before: lastId })
-        if (!msgs.size) break
-        for (const msg of msgs.values()) {
-          const ts = msg.createdAt
-          if (ts < startDate) break outer
-          if (ts < endDate) {
-            const key = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}`
-            if (!buckets[key]) buckets[key] = { totalMessages: 0, uniquePosters: new Set() }
-            buckets[key].totalMessages++
-            if (!msg.author.bot) buckets[key].uniquePosters.add(msg.author.id)
-          }
+      const statusResponse = await makeRequest(apiUrl.toString(), {
+        method: 'GET'
+      })
+
+      console.log(`📊 Status: ${statusResponse.status}`)
+      console.log(`📝 Message: ${statusResponse.message}`)
+
+      if (statusResponse.status === 'completed') {
+        console.log('✅ Stats collection completed!')
+
+        // Step 3: Write the stats to the output file
+        const stats = statusResponse.stats
+        const outDir = path.dirname(OUTPUT_FILE)
+
+        if (!fs.existsSync(outDir)) {
+          fs.mkdirSync(outDir, { recursive: true })
         }
-        lastId = msgs.last()?.id
-        if (!lastId) break
-        await new Promise(r => setTimeout(r, 500))
+
+        fs.writeFileSync(OUTPUT_FILE, JSON.stringify(stats, null, 2))
+        console.log(`✅ Stats written to ${OUTPUT_FILE}`)
+        console.log(`📊 Last updated: ${statusResponse.lastUpdated}`)
+        console.log(`⏱️  Time since update: ${statusResponse.timeSinceUpdate} seconds`)
+
+        process.exit(0)
+      } else if (statusResponse.status === 'stale') {
+        console.log('⚠️  Stats are stale, but available. Using current data...')
+
+        const stats = statusResponse.stats
+        const outDir = path.dirname(OUTPUT_FILE)
+
+        if (!fs.existsSync(outDir)) {
+          fs.mkdirSync(outDir, { recursive: true })
+        }
+
+        fs.writeFileSync(OUTPUT_FILE, JSON.stringify(stats, null, 2))
+        console.log(`✅ Stats written to ${OUTPUT_FILE}`)
+        console.log(`📊 Last updated: ${statusResponse.lastUpdated}`)
+        console.log(`⏱️  Time since update: ${statusResponse.timeSinceUpdate} seconds`)
+
+        process.exit(0)
+      } else if (statusResponse.status === 'pending') {
+        console.log('⏳ Stats are still being processed...')
+
+        if (attempt === maxAttempts) {
+          console.error('❌ Timeout: Stats collection did not complete within the expected time')
+          process.exit(1)
+        }
+
+        await sleep(pollInterval)
+      }
+    } catch (error) {
+      console.error(`❌ Polling attempt ${attempt} failed:`, error.message)
+
+      if (attempt === maxAttempts) {
+        console.error('❌ Failed to get results after all attempts')
+        process.exit(1)
       }
 
-      // Threads (active + archived)
-      if (channel.threads) {
-        const pools = [
-          await channel.threads.fetchActive(),
-          await channel.threads.fetchArchived({ limit: 100 })
-        ]
-        for (const pool of pools) {
-          for (const thread of pool.threads.values()) {
-            let threadLastId = null
-            while (true) {
-              const msgs = await thread.messages.fetch({ limit: 100, before: threadLastId })
-              if (!msgs.size) break
-              for (const msg of msgs.values()) {
-                const ts = msg.createdAt
-                if (ts < startDate) break
-                if (ts < endDate) {
-                  const key = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}`
-                  if (!buckets[key]) buckets[key] = { totalMessages: 0, uniquePosters: new Set() }
-                  buckets[key].totalMessages++
-                  if (!msg.author.bot) buckets[key].uniquePosters.add(msg.author.id)
-                }
-              }
-              threadLastId = msgs.last()?.id
-              if (!threadLastId) break
-              await new Promise(r => setTimeout(r, 500))
-            }
-          }
-        }
-      }
+      await sleep(pollInterval)
     }
-
-    // Populate data
-    for (let m = 0; m < now.getMonth(); m++) {
-      const dt  = new Date(BACKFILL_YEAR, m, 1)
-      const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}`
-      const stats = buckets[key] || { totalMessages: 0, uniquePosters: new Set() }
-      data[key] = {
-        memberCount,
-        totalMessages: stats.totalMessages,
-        uniquePosters: stats.uniquePosters.size
-      }
-      console.log(`  → ${key}: ${stats.totalMessages} msgs, ${stats.uniquePosters.size} uniquePosters, ${memberCount} members`)
-    }
-
-  } else {
-    // Last-month only
-    const monthStart = new Date(now.getFullYear(), now.getMonth()-1, 1)
-    const monthEnd   = new Date(now.getFullYear(), now.getMonth(), 1)
-    const key        = `${monthStart.getFullYear()}-${String(monthStart.getMonth()+1).padStart(2,'0')}`
-
-    let totalMessages = 0
-    const uniquePostersSet = new Set()
-
-    for (const channel of channels) {
-      let lastId = null
-      while (true) {
-        const msgs = await channel.messages.fetch({ limit: 100, before: lastId })
-        if (!msgs.size) break
-        for (const msg of msgs.values()) {
-          const ts = msg.createdAt
-          if (ts >= monthStart && ts < monthEnd) {
-            totalMessages++
-            if (!msg.author.bot) uniquePostersSet.add(msg.author.id)
-          }
-          if (ts < monthStart) { msgs.clear(); break }
-        }
-        lastId = msgs.last()?.id
-        if (!lastId) break
-        await new Promise(r => setTimeout(r, 500))
-      }
-
-      if (channel.threads) {
-        // Active threads
-        const active = await channel.threads.fetchActive()
-        for (const thread of active.threads.values()) {
-          let threadLastId = null
-          while (true) {
-            const msgs = await thread.messages.fetch({ limit: 100, before: threadLastId })
-            if (!msgs.size) break
-            for (const msg of msgs.values()) {
-              const ts = msg.createdAt
-              if (ts >= monthStart && ts < monthEnd) {
-                totalMessages++
-                if (!msg.author.bot) uniquePostersSet.add(msg.author.id)
-              }
-              if (ts < monthStart) { msgs.clear(); break }
-            }
-            threadLastId = msgs.last()?.id
-            if (!threadLastId) break
-            await new Promise(r => setTimeout(r, 500))
-          }
-        }
-        // Archived threads
-        const archived = await channel.threads.fetchArchived({ limit: 100 })
-        for (const thread of archived.threads.values()) {
-          let threadLastId = null
-          while (true) {
-            const msgs = await thread.messages.fetch({ limit: 100, before: threadLastId })
-            if (!msgs.size) break
-            for (const msg of msgs.values()) {
-              const ts = msg.createdAt
-              if (ts >= monthStart && ts < monthEnd) {
-                totalMessages++
-                if (!msg.author.bot) uniquePostersSet.add(msg.author.id)
-              }
-              if (ts < monthStart) { msgs.clear(); break }
-            }
-            threadLastId = msgs.last()?.id
-            if (!threadLastId) break
-            await new Promise(r => setTimeout(r, 500))
-          }
-        }
-      }
-    }
-
-    data[key] = {
-      memberCount,
-      totalMessages,
-      uniquePosters: uniquePostersSet.size
-    }
-    console.log(`📊 Wrote stats for ${key}: ${totalMessages} msgs, ${uniquePostersSet.size} uniquePosters, ${memberCount} members`)
   }
+}
 
-  // Sort and write out
-  const ordered = {}
-  Object.keys(data).sort().forEach(k => { ordered[k] = data[k] })
-  const outDir = path.dirname(OUTPUT_FILE)
-  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true })
-  fs.writeFileSync(OUTPUT_FILE, JSON.stringify(ordered, null, 2))
-  console.log(`✅ Stats written to ${OUTPUT_FILE}`)
-  process.exit(0)
+// Run the main function
+main().catch(error => {
+  console.error('❌ Fatal error:', error.message)
+  process.exit(1)
 })
-
-client.login(DISCORD_TOKEN)

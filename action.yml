@@ -1,11 +1,8 @@
 # action.yml
 name: "Discord Stats"
-description: "Fetch monthly Discord member & message stats"
+description: "Fetch monthly Discord member & message stats via Netlify background function"
 
 inputs:
-  discord-token:
-    description: "Bot token"
-    required: true
   guild-id:
     description: "Server (guild) ID"
     required: true
@@ -39,7 +36,6 @@ runs:
       shell: bash
       run: node ${{ github.action_path }}/getStats.js
       env:
-        DISCORD_TOKEN: ${{ inputs.discord-token }}
         GUILD_ID: ${{ inputs.guild-id }}
         OUTPUT_FILE: ${{ inputs.output-file }}
         BACKFILL: ${{ inputs.backfill }}
