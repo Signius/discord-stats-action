@@ -3,25 +3,20 @@ import fs from 'fs'
 import path from 'path'
 
 // —— Config from env / GitHub Action inputs ——
-const GUILD_ID = process.env.INPUT_GUILD_ID || process.env.GUILD_ID
+const GUILD_ID = process.env.GUILD_ID
 
 const OUTPUT_FILE =
-  process.env.INPUT_OUTPUT_FILE ||
   process.env.OUTPUT_FILE ||
   path.resolve(process.cwd(), 'data/discord-stats/stats.json')
 
-const BACKFILL = (process.env.INPUT_BACKFILL || process.env.BACKFILL || 'false') === 'true'
-const BACKFILL_YEAR = Number(process.env.INPUT_BACKFILL_YEAR || process.env.BACKFILL_YEAR) || new Date().getFullYear()
+const BACKFILL = (process.env.BACKFILL || 'false') === 'true'
+const BACKFILL_YEAR = Number(process.env.BACKFILL_YEAR) || new Date().getFullYear()
 
 // Debug logging
 console.log('🔍 Environment variables:')
-console.log(`  INPUT_GUILD_ID: ${process.env.INPUT_GUILD_ID}`)
 console.log(`  GUILD_ID: ${process.env.GUILD_ID}`)
-console.log(`  INPUT_OUTPUT_FILE: ${process.env.INPUT_OUTPUT_FILE}`)
 console.log(`  OUTPUT_FILE: ${process.env.OUTPUT_FILE}`)
-console.log(`  INPUT_BACKFILL: ${process.env.INPUT_BACKFILL}`)
 console.log(`  BACKFILL: ${process.env.BACKFILL}`)
-console.log(`  INPUT_BACKFILL_YEAR: ${process.env.INPUT_BACKFILL_YEAR}`)
 console.log(`  BACKFILL_YEAR: ${process.env.BACKFILL_YEAR}`)
 console.log('📊 Resolved values:')
 console.log(`  GUILD_ID: ${GUILD_ID}`)
